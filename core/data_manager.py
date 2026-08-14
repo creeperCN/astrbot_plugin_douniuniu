@@ -1,18 +1,25 @@
 from collections import OrderedDict
-
 import yaml
 import json
 import os
+import time
 from typing import Dict, Any
 from pathlib import Path
 
-from data.plugins.astrbot_plugin_douniuniu.core.exceptions import DataLoadError, DataSaveError
-from data.plugins.astrbot_plugin_douniuniu.core.utils import random_normal_distribution_int, format_length
+from .exceptions import DataLoadError, DataSaveError
+from .utils import random_normal_distribution_int, format_length
+
+try:
+    from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
+    DEFAULT_DATA_FILE = Path(get_astrbot_data_path()) / 'douniuniu_plugin' / 'user.yaml'
+except Exception:
+    DEFAULT_DATA_FILE = Path('data/douniuniu_plugin/user.yaml')
 
 
 class DataManager:
-    def __init__(self, file_path='data/douniuniu_plugin/user.yaml'):
-        self.file_path = Path(file_path)
+    def __init__(self, file_path=None):
+        self.file_path = Path(file_path) if file_path else DEFAULT_DATA_FILE
         self.default_yaml = {
             "groups": {},
             "users": {}
@@ -30,9 +37,6 @@ class DataManager:
             with open(self.file_path, 'w') as f:
                 yaml.dump(self.default_yaml, f)
 
-    # --------------------------
-    # 核心方法
-    # --------------------------
     def load_all_data(self) -> Dict[str, Any]:
         """加载全部数据"""
         try:
@@ -65,12 +69,10 @@ class DataManager:
         return data["groups"][group_id]
 
     def get_all_group_data(self) -> Dict[str, Any]:
-        """获取所有群数据"""
         data = self.load_all_data()
         return data["groups"]
 
     def get_all_user_data(self) -> Dict[str, Any]:
-        """获取所有用户数据"""
         data = self.load_all_data()
         return data["users"]
 
@@ -85,7 +87,6 @@ class DataManager:
         self.save_all_data(all_data)
 
     def save_group_data(self, group_id: str, group_data: Dict[str, Any]):
-        """保存群数据"""
         data = self.load_all_data()
         data["groups"][str(group_id)] = group_data
         self.save_all_data(data)
@@ -103,7 +104,6 @@ class DataManager:
         return sorted_rank_data_n
 
     def save_group_rank(self, group_id: str, rank_data: Dict[str, Any]):
-        """保存排行榜数据"""
         group_data = self.get_group_data(group_id)
         group_data['rank'] = rank_data
         self.save_group_data(group_id, group_data)
@@ -112,22 +112,20 @@ class DataManager:
         """加入/更新排行榜"""
         user_data = self.get_user_data(user_id)
         user_name = user_data['user_name']
-        score = round(user_data['length'] * 0.3 + user_data['hardness'] *0.7, 2)
+        score = round(user_data['length'] * 0.3 + user_data['hardness'] * 0.7, 2)
         in_group_list = user_data['in_group']
-        # 统一所有组数据
         for group in in_group_list:
             rank = self.get_group_rank_all(group)
             rank[str(user_id)] = [str(user_name), score]
             self.save_group_rank(group, rank)
 
-    def delete_user_from_group_rank(self, group_id,user_id):
-        """将user从group的排行榜中删除"""
+    def delete_user_from_group_rank(self, group_id, user_id):
         rank_data = self.get_group_rank_all(group_id)
         if user_id in rank_data:
             del rank_data[user_id]
             self.save_group_rank(group_id, rank_data)
 
-    def add_in_group(self,user_id,group_id):
+    def add_in_group(self, user_id, group_id):
         """加入新群到user_data"""
         user_data = self.get_user_data(user_id)
         if group_id not in user_data['in_group']:
@@ -135,18 +133,55 @@ class DataManager:
             self.save_user_data(user_id, user_data)
 
     def get_user_data(self, user_id: str) -> Dict[str, Any]:
-        """获取用户数据（不存在时返回空字典）"""
+        """获取用户数据（兼容补全老数据字段与过期状态重置）"""
         data = self.load_all_data()
-        return data["users"].get(str(user_id), {})
+        user_data = data["users"].get(str(user_id), {})
+        
+        if user_data:
+            changed = False
+            now = time.time()
+            
+            default_items = {'viagra': 0, 'transfer': False, 'pills': False, 'drone': [], 'elf_reminder': True, '20off': False, 'sandbag': False, 'jump_egg': False}
+            default_items_num = {'伟哥': 0, '迷幻菌子': 0, '春天的药': 0, '黑店壮丁手术体验卡': 0, '诊所壮丁手术体验卡': 0, '医院壮丁手术体验卡': 0, '六味地黄丸': 0, '负重沙袋': 0, '会跳的蛋': 0, '性转针筒': 0, '牛牛转换器': 0, '猫猫转换器': 0, '春风精灵': 0, '牛牛盲盒': 0, '牛牛寄生虫': 0, '改名卡': 0, '商店8折优惠券': 0, '杀虫剂': 0}
+            default_time_rec = {'sign': 0, 'do_self': 0, 'do_other': 0, 'start_work': [0, 0], 'start_exercise': [0, 0], 'start_trans': 0, 'start_20off': 0, 'start_elf': 0, 'battle': 0, 'been_do_other': 0}
+
+            for key, val in default_items.items():
+                if key not in user_data.setdefault('items', {}):
+                    user_data['items'][key] = val
+                    changed = True
+            for key, val in default_items_num.items():
+                if key not in user_data.setdefault('items_num', {}):
+                    user_data['items_num'][key] = val
+                    changed = True
+            for key, val in default_time_rec.items():
+                if key not in user_data.setdefault('time_recording', {}):
+                    user_data['time_recording'][key] = val
+                    changed = True
+
+            # 状态过期检查
+            if user_data['items'].get('transfer', False):
+                start_trans = user_data['time_recording'].get('start_trans', 0)
+                if now - start_trans > 86400:  
+                    user_data['items']['transfer'] = False
+                    changed = True
+                    
+            if user_data['items'].get('20off', False):
+                start_20off = user_data['time_recording'].get('start_20off', 0)
+                if now - start_20off > 300: 
+                    user_data['items']['20off'] = False
+                    changed = True
+                    
+            if changed:
+                self.save_user_data(user_id, user_data)
+                
+        return user_data
 
     def save_user_data(self, user_id: str, user_data: Dict[str, Any]):
-        """保存用户数据"""
         data = self.load_all_data()
         data["users"][str(user_id)] = user_data
         self.save_all_data(data)
 
     def create_user(self, group_id: str, user_id: str, user_name: str):
-        """创建一个初始化牛牛"""
         min_length = self.min_length
         max_length = self.max_length
         min_hardness = self.min_hardness
@@ -174,96 +209,61 @@ class DataManager:
             "length": init_length,
             "coins": 0,
             "hardness": init_hardness,
-            "hole": 0,  # 洞洞深度
-            "sensitivity": 0,  # 敏感度
-            "win_count": 0,  # 历史连胜最高次数
-            "current_win_count": 0,  # 当前连胜最高次数
-            "in_group": [group_id],  # 在哪些群
+            "hole": 0,
+            "sensitivity": 0,
+            "win_count": 0,
+            "current_win_count": 0,
+            "in_group": [group_id],
             'items': {
-                # 道具状态
-                'viagra': 0,  # 伟哥剩余次数
-                'transfer': False,  # 是否已使用性转
-                'pills': False,  # 是否有六味地黄丸效果
-                'drone': [], # 寄生虫效果['user_id1','user_id2']
-                'elf_reminder': True, # 春风精灵提醒
-                '20off': False, # 商店打折
-                'sandbag': False, # 是否使用了沙袋
-                'jump_egg': False, # 是否使用了会跳的蛋
+                'viagra': 0, 'transfer': False, 'pills': False, 'drone': [], 
+                'elf_reminder': True, '20off': False, 'sandbag': False, 'jump_egg': False,
             },
             'items_num':{
-                # 拥有对应商品数量统计
-                '伟哥': 0,  # 伟哥
-                '迷幻菌子': 0,  #
-                '春天的药': 0,  #
-                '黑店壮丁手术体验卡': 0,  #
-                '诊所壮丁手术体验卡': 0,  # 诊所
-                '医院壮丁手术体验卡': 0,  # 医院
-                '六味地黄丸': 0,  # 六味地黄丸
-                '负重沙袋': 0,  # 负重沙袋
-                '会跳的蛋': 0,  # 会跳的蛋
-                '性转针筒': 0,  # 性转针筒
-                '牛牛转换器': 0,  # 牛牛转换器
-                '猫猫转换器': 0,  # 猫猫转换器
-                '春风精灵': 0,  # 春风精灵
-                '牛牛盲盒': 0,  # 牛牛盲盒
-                '牛牛寄生虫': 0,  # 牛牛寄生虫
-                '改名卡': 0,  # 改名卡
-                '商店8折优惠券': 0,  # 优惠券
-                '杀虫剂': 0,  # 杀虫剂
+                '伟哥': 0, '迷幻菌子': 0, '春天的药': 0, '黑店壮丁手术体验卡': 0, 
+                '诊所壮丁手术体验卡': 0, '医院壮丁手术体验卡': 0, '六味地黄丸': 0, 
+                '负重沙袋': 0, '会跳的蛋': 0, '性转针筒': 0, '牛牛转换器': 0, 
+                '猫猫转换器': 0, '春风精灵': 0, '牛牛盲盒': 0, '牛牛寄生虫': 0, 
+                '改名卡': 0, '商店8折优惠券': 0, '杀虫剂': 0,
             },
             'time_recording': {
-                'sign': 0,  # 上次签到时间
-                'do_self': 0,  # 上次打胶/自摸时间
-                'do_other': 0,  # 上次锁牛牛/吸猫猫时间
-                'start_work': [0,0],  # 开始打工的时间
-                'start_exercise': [0,0],  # 开始锻炼的时间
-                'start_trans': 0,  # 开始性转时间
-                'start_20off': 0,  # 使用8折券时间
-                'start_elf': 0,  # 使用春风精灵时间
+                'sign': 0, 'do_self': 0, 'do_other': 0, 'start_work': [0,0], 
+                'start_exercise': [0,0], 'start_trans': 0, 'start_20off': 0, 'start_elf': 0,
+                'battle': 0, 'been_do_other': 0,
             },
         }
-        # 保存数据
         self.save_user_data(user_id, init_user_data)
-        # 加入排行榜
         self.update_rank(user_id)
         return message, init_length, init_hardness
 
     def delete_user(self, user_id: str):
-        """注销指定用户"""
         user_data = self.get_user_data(user_id)
         in_group = user_data['in_group']
         for group_id in in_group:
-            self.delete_user_from_group_rank(group_id,user_id)
+            self.delete_user_from_group_rank(group_id, user_id)
         all_user_data = self.get_all_user_data()
         del all_user_data[user_id]
         self.save_all_user_data(all_user_data)
 
-
     def add_group_manager(self, group_id, user_id):
-        """向指定群添加管理员"""
         group_data = self.get_group_data(group_id)
         if user_id not in group_data['manager']:
             group_data['manager'].append(user_id)
             self.save_group_data(group_id, group_data)
 
     def del_group_manager(self, group_id, user_id):
-        """向指定群删除管理员"""
         group_data = self.get_group_data(group_id)
         if user_id in group_data['manager']:
             group_data['manager'].remove(user_id)
             self.save_group_data(group_id, group_data)
 
     def set_group_enabled(self, group_id, enabled: bool):
-        """开启群里牛牛"""
         group_data = self.get_group_data(group_id)
         plugin_enabled = group_data['plugin_enabled']
-        # 只有不相同的时候才做处理
         if enabled != plugin_enabled:
             group_data['plugin_enabled'] = enabled
             self.save_group_data(group_id, group_data)
 
-    def set_value(self, user_id, item_path:list, item_value:Any):
-        """修改属性参数"""
+    def set_value(self, user_id, item_path: list, item_value: Any):
         user_data = self.get_user_data(user_id)
         if len(item_path) == 1:
             user_data[item_path[0]] = item_value
@@ -273,7 +273,6 @@ class DataManager:
 
     def set_niuniu_name(self, user_id, niuniu_name: str) -> bool:
         user_data = self.get_user_data(user_id)
-        # 只有不相同的时候才改
         if user_data['niuniu_name'] != str(niuniu_name):
             user_data['niuniu_name'] = str(niuniu_name)
             self.save_user_data(user_id, user_data)
@@ -281,38 +280,32 @@ class DataManager:
         return False
 
     def add_length(self, group_id, user_id, length: int):
-        """增加长度"""
         user_data = self.get_user_data(user_id)
         user_drone = user_data['items']['drone']
-        if len(user_drone)>0:
-            # 寄生虫加长度
-            length = int(length/(len(user_drone)+1))
-            if length>0:
+        if len(user_drone) > 0:
+            length = int(length / (len(user_drone) + 1))
+            if length > 0:
                 for i in user_drone:
-                    self.add_length(group_id, i, length)
+                    # 寄生虫主人可能已注销，跳过不存在的用户防止崩溃
+                    if self.get_user_data(i):
+                        self.add_length(group_id, i, length)
         user_data['length'] += length
         self.save_user_data(user_id, user_data)
-
-        # 更新排行榜
         self.update_rank(user_id)
-        # 返回实际增加长度
         return length
 
     def del_length(self, user_id, length: int):
-        """减少长度"""
         user_data = self.get_user_data(user_id)
         user_data['length'] = max(1, user_data['length'] - length)
         self.save_user_data(user_id, user_data)
-
-        # 更新排行榜
         self.update_rank(user_id)
 
-    def add_hole(self,user_id,deep:int):
+    def add_hole(self, user_id, deep: int):
         user_data = self.get_user_data(user_id)
         user_data['hole'] += deep
         self.save_user_data(user_id, user_data)
 
-    def del_hole(self,user_id,deep:int):
+    def del_hole(self, user_id, deep: int):
         user_data = self.get_user_data(user_id)
         user_data['hole'] = max(0, user_data['hole'] - deep)
         self.save_user_data(user_id, user_data)
@@ -328,37 +321,28 @@ class DataManager:
         self.save_user_data(user_id, user_data)
 
     def add_hardness(self, user_id, hardness: int):
-        """增加硬度"""
         user_data = self.get_user_data(user_id)
         user_data['hardness'] += hardness
         self.save_user_data(user_id, user_data)
-
-        # 更新排行榜
         self.update_rank(user_id)
 
     def del_hardness(self, user_id, hardness: int):
-        """减少硬度"""
         user_data = self.get_user_data(user_id)
         user_data['hardness'] = max(1, user_data['hardness'] - hardness)
         self.save_user_data(user_id, user_data)
-
-        # 更新排行榜
         self.update_rank(user_id)
 
     def add_coins(self, user_id, coins: int):
-        """增加金币"""
         user_data = self.get_user_data(user_id)
         user_data['coins'] += coins
         self.save_user_data(user_id, user_data)
 
     def del_coins(self, user_id, coins: int):
-        """减少金币,金币可以为负"""
         user_data = self.get_user_data(user_id)
         user_data['coins'] -= coins
         self.save_user_data(user_id, user_data)
 
     def reset_win_count(self, user_id):
-        """重置当前连胜次数，并返回是否终结连胜"""
         user_data = self.get_user_data(user_id)
         if user_data['current_win_count'] == 0:
             return False
@@ -368,7 +352,6 @@ class DataManager:
             return True
 
     def update_win_count(self, user_id):
-        """更新连胜次数，每次调用增加1连胜，并返回是否破纪录"""
         user_data = self.get_user_data(user_id)
         user_data['current_win_count'] += 1
         self.save_user_data(user_id, user_data)
@@ -378,19 +361,17 @@ class DataManager:
             return True
         return False
 
-    def use_item(self,user_id,item_path:list,num:int=1):
-        """使用道具，并返回是否使用成功"""
+    def use_item(self, user_id, item_path: list, num: int = 1):
         user_data = self.get_user_data(user_id)
-        if len(item_path)==2:
-            if user_data[item_path[0]][item_path[1]]>= num:
+        if len(item_path) == 2:
+            if user_data[item_path[0]][item_path[1]] >= num:
                 user_data[item_path[0]][item_path[1]] -= num
                 self.save_user_data(user_id, user_data)
                 return True
             else:
                 return False
 
-    def add_drone(self,user1_id,user2_id, num) -> int:
-        """user1向user2使用寄生虫，返回寄生虫计数"""
+    def add_drone(self, user1_id, user2_id, num) -> int:
         user1_data = self.get_user_data(user1_id)
         user2_data = self.get_user_data(user2_id)
         for _ in range(num):
@@ -401,16 +382,15 @@ class DataManager:
 
         return user2_data['items']['drone'].count(user1_id)
 
-    def remove_drone(self,user_id, num):
-        """user移除身上num个寄生虫"""
+    def remove_drone(self, user_id, num):
+        """移除用户身上前 num 只寄生虫，并扣除对应数量的杀虫剂"""
         user_data = self.get_user_data(user_id)
         exist_drone = user_data['items']['drone']
-        if num == len(exist_drone):
-            user_data['items']['drone'] = []
-        elif num > len(exist_drone):
-            print("传入删除个数大于寄生虫列表长度")
+        num = max(0, int(num))
+        if num >= len(exist_drone):
             user_data['items']['drone'] = []
         else:
             user_data['items']['drone'] = user_data['items']['drone'][num:]
-        user_data['items_num']['杀虫剂'] -= num
+        # 防止数量被扣成负数导致杀虫剂自锁
+        user_data['items_num']['杀虫剂'] = max(0, user_data['items_num'].get('杀虫剂', 0) - num)
         self.save_user_data(user_id, user_data)

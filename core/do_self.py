@@ -1,8 +1,8 @@
 import random
 import time
 
-from data.plugins.astrbot_plugin_douniuniu.core.data_manager import DataManager
-from data.plugins.astrbot_plugin_douniuniu.core.utils import random_normal_distribution_int, format_length, get_add_text
+from .data_manager import DataManager
+from .utils import random_normal_distribution_int, format_length, get_add_text
 
 
 class DoSelf:
@@ -11,9 +11,9 @@ class DoSelf:
         self.probabilities_niu = {
             '长度增加硬度减少': 35,
             '增加双属性': 30,
-            '无变化': 20,  # 无变化
-            '减少长度硬度不变': 10,  # 减少长度硬度不变
-            '减少双属性': 5  # 减少双属性
+            '无变化': 20,
+            '减少长度硬度不变': 10,
+            '减少双属性': 5
         }
         self.reason_niu = {
             '长度增加硬度减少': [
@@ -73,7 +73,6 @@ class DoSelf:
         user_data = self.data_manager.get_user_data(user_id)
         niuniu_name = user_data['niuniu_name']
         text = ''
-        # 使用伟哥打胶
         if user_data['items']['viagra'] > 0:
             add_length = random_normal_distribution_int(1, 11, 1)
             true_add = self.data_manager.add_length(group_id, user_id, add_length)
@@ -82,23 +81,19 @@ class DoSelf:
             remain_times = user_data['items']['viagra']
             if remain_times == 0:
                 text += f'💊 伟哥次数已用完\n'
-                # 更新打胶最后时间
                 self.data_manager.set_value(user_id, ['time_recording', 'do_self'], time.time())
             else:
                 text += f'💊 伟哥使用成功，剩余{remain_times}次\n'
-
             text += get_add_text(true_add, add_length, user_data)
             return text
-        # 无伟哥
+
         result = random.choices(
             list(self.probabilities_niu.keys()),
             weights=list(self.probabilities_niu.values()),
             k=1
         )[0]
-        # 添加原因
         text += f"{random.choice(self.reason_niu[result])}\n"
         if result == '长度增加硬度减少':
-            # 修改对应参数
             del_hardness = random_normal_distribution_int(1, 4, 1)
             add_length = int(del_hardness * (1 + random.random()))
             self.data_manager.del_hardness(user_id, del_hardness)
@@ -135,21 +130,18 @@ class DoSelf:
         self.data_manager.set_value(user_id, ['time_recording', 'do_self'], time.time())
         return text
 
-    def do_self_niu_mushroom(self, group_id, user1_id,user2_id) -> str:
-        """打胶"""
+    def do_self_niu_mushroom(self, group_id, user1_id, user2_id) -> str:
+        """迷幻菌子打胶"""
         user1_data = self.data_manager.get_user_data(user1_id)
         niuniu_name1 = user1_data['niuniu_name']
         text = ''
-        # 无伟哥
         result = random.choices(
             list(self.probabilities_niu.keys()),
             weights=list(self.probabilities_niu.values()),
             k=1
         )[0]
-        # 添加原因
         text += f"{random.choice(self.reason_niu[result])}\n"
         if result == '长度增加硬度减少':
-            # 修改对应参数
             del_hardness = random_normal_distribution_int(1, 4, 1)
             add_length = int(del_hardness * (1 + random.random()))
             self.data_manager.del_hardness(user1_id, del_hardness)
@@ -187,13 +179,58 @@ class DoSelf:
         return text
 
     def do_self_mao_mushroom(self, group_id, user1_id, user2_id) -> str:
-        return ''
+        """迷幻菌子自摸"""
+        user1_data = self.data_manager.get_user_data(user1_id)
+        niuniu_name1 = user1_data['user_name'] + "的猫猫"
+        text = ''
+        result = random.choices(
+            list(self.probabilities_niu.keys()),
+            weights=list(self.probabilities_niu.values()),
+            k=1
+        )[0]
+        text += f"{random.choice(self.reason_mao[result])}\n"
+        
+        if result == '长度增加硬度减少':
+            del_hardness = random_normal_distribution_int(1, 4, 1)
+            add_length = int(del_hardness * (1 + random.random()))
+            self.data_manager.del_sensitivity(user1_id, del_hardness)
+            self.data_manager.add_hole(user1_id, add_length)
+            user_data = self.data_manager.get_user_data(user1_id)
+            text += f"📏 {user_data['user_name']}的猫猫深度增加{add_length}cm，当前深度：{format_length(user_data['hole'])}\n"
+            text += f"💦 {niuniu_name1}的敏感度减少{del_hardness}级，当前敏感度：{user_data['sensitivity']}级\n"
+        elif result == '增加双属性':
+            add_hardness = random_normal_distribution_int(1, 4, 1)
+            self.data_manager.add_sensitivity(user1_id, add_hardness)
+            add_length = random_normal_distribution_int(1, 11, 2)
+            self.data_manager.add_hole(user1_id, add_length)
+            user_data = self.data_manager.get_user_data(user1_id)
+            text += f"📏 {user_data['user_name']}的猫猫深度增加{add_length}cm，当前深度：{format_length(user_data['hole'])}\n"
+            text += f"💦 {niuniu_name1}的敏感度增加{add_hardness}级，当前敏感度：{user_data['sensitivity']}级\n"
+        elif result == '无变化':
+            text += f'🈚 {niuniu_name1}的深度和敏感度均没发生变化'
+        elif result == '减少长度硬度不变':
+            del_length = random_normal_distribution_int(1, 11, 2)
+            self.data_manager.del_hole(user1_id, del_length)
+            user_data = self.data_manager.get_user_data(user1_id)
+            text += f"📏 {user_data['user_name']}的猫猫深度减少{del_length}cm，当前深度：{format_length(user_data['hole'])}\n"
+            text += f'💦 {niuniu_name1}的敏感度没有发生变化'
+        elif result == '减少双属性':
+            del_length = random_normal_distribution_int(1, 11, 2)
+            del_hardness = random_normal_distribution_int(1, 4, 1)
+            self.data_manager.del_sensitivity(user1_id, del_hardness)
+            self.data_manager.del_hole(user1_id, del_length)
+            user_data = self.data_manager.get_user_data(user1_id)
+            text += f"📏 {niuniu_name1}的深度减少了{del_length}cm，当前深度：{format_length(user_data['hole'])}\n"
+            text += f"💦 {niuniu_name1}的敏感度减少了{del_hardness}级，当前敏感度：{user_data['sensitivity']}级\n"
+            
+        self.data_manager.set_value(user2_id, ['time_recording', 'do_self'], time.time())
+        return text
 
     def do_self_mao(self, group_id, user_id) -> str:
+        """自摸"""
         user_data = self.data_manager.get_user_data(user_id)
         niuniu_name = user_data['user_name'] + "的猫猫"
         text = ''
-        # 使用伟哥打胶
         if user_data['items']['viagra'] > 0:
             add_length = random_normal_distribution_int(1, 11, 1)
             self.data_manager.add_hole(user_id, add_length)
@@ -202,23 +239,19 @@ class DoSelf:
             remain_times = user_data['items']['viagra']
             if remain_times == 0:
                 text += f'💊 伟哥次数已用完\n'
-                # 更新打胶最后时间
                 self.data_manager.set_value(user_id, ['time_recording', 'do_self'], time.time())
             else:
                 text += f'💊 伟哥使用成功，剩余{remain_times}次\n'
-
             text += f"📏 {user_data['user_name']}的猫猫深度增加{add_length}cm，当前深度：{format_length(self.data_manager.get_user_data(user_id)['hole'])}\n"
             return text
-        # 无伟哥
+
         result = random.choices(
             list(self.probabilities_niu.keys()),
             weights=list(self.probabilities_niu.values()),
             k=1
         )[0]
-        # 添加原因
         text += f"{random.choice(self.reason_mao[result])}\n"
         if result == '长度增加硬度减少':
-            # 修改对应参数
             del_hardness = random_normal_distribution_int(1, 4, 1)
             add_length = int(del_hardness * (1 + random.random()))
             self.data_manager.del_sensitivity(user_id, del_hardness)
@@ -234,7 +267,6 @@ class DoSelf:
             self.data_manager.add_hole(user_id, add_length)
             user_data = self.data_manager.get_user_data(user_id)
             text += f"📏 {user_data['user_name']}的猫猫深度增加{add_length}cm，当前深度：{format_length(self.data_manager.get_user_data(user_id)['hole'])}\n"
-
             now_hardness = user_data['sensitivity']
             text += f"💦 {niuniu_name}的敏感度增加{add_hardness}级，当前敏感度：{now_hardness}级\n"
         elif result == '无变化':

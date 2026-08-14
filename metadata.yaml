@@ -1,6 +1,6 @@
 name: douniuniu # 这是你的插件的唯一识别名。
 desc: 培养你的牛牛，然后塔塔开！ # 插件简短描述
 help: 输入 斗牛帮助 查看关键词回复帮助。 # 插件的帮助信息
-version: v0.0.2 # 插件版本号。格式：v1.1.1 或者 v1.1
+version: v0.0.8 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: laozhu # 作者
-repo: https://github.com/LaoZhuJackson/astrbot_plugin_douniuniu # 插件的仓库地址
+repo: https://github.com/creeperCN/astrbot_plugin_douniuniu # 插件的仓库地址

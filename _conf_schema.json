@@ -1,4 +1,11 @@
 {
+    "superusers": {
+        "description": "超级用户(Bot管理员)QQ号",
+        "type": "list",
+        "hint": "填入管理员QQ号。超级用户拥有最高权限（如发钱、全局配置），且自带所有群的牛牛管理员权限",
+        "default": [],
+        "obvious_hint": true
+    },
     "disabled_name": {
         "description": "牛牛取名的非法词",
         "type": "list",
@@ -20,18 +27,25 @@
         "default": 300,
         "obvious_hint": false
     },
+    "battle_cooldown": {
+        "description": "牛牛决斗的冷却时间",
+        "type": "int",
+        "hint": "建议设置，单位是：秒",
+        "default": 120,
+        "obvious_hint": false
+    },
     "max_work_hours": {
         "description": "最长打工时长",
         "type": "int",
         "hint": "建议设置，单位是：秒",
-        "default": 21600,
+        "default": 57600,
         "obvious_hint": false
     },
     "max_exercise_hours": {
         "description": "最长锻炼时长",
         "type": "int",
         "hint": "建议设置，单位是：秒",
-        "default": 10800,
+        "default": 46800,
         "obvious_hint": false
     },
     "coins_per_hour": {
