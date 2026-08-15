@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from astrbot.api import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
 from astrbot.api.message_components import At
+from astrbot.core.star.filter.command import GreedyStr
 
 from .core.battle import Battle
 from .core.data_manager import DataManager
@@ -27,7 +29,7 @@ except Exception:
     ASTRBOT_DATA_DIR = Path("data")
 
 
-@register("douniuniu", "laozhu", "培养你的牛牛，然后塔塔开！", "0.0.8")
+@register("douniuniu", "laozhu", "培养你的牛牛，然后塔塔开！", "0.0.9")
 class DouNiuniuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -66,6 +68,24 @@ class DouNiuniuPlugin(Star):
             return True
         return False
 
+    def is_event_superuser(self, event: AstrMessageEvent) -> bool:
+        """事件级超级用户判断：兼容 AstrBot 全局管理员（event.role == admin）与插件配置"""
+        try:
+            if event.is_admin():
+                return True
+        except Exception:
+            pass
+        return self.is_superuser(event.get_sender_id())
+
+    def is_event_niuniu_admin(self, event: AstrMessageEvent) -> bool:
+        """事件级牛牛管理员判断"""
+        if self.is_event_superuser(event):
+            return True
+        group_id = event.get_group_id()
+        user_id = event.get_sender_id()
+        manager_list = self.data_manager.get_group_data(group_id).get('manager', [])
+        return str(user_id) in {str(m) for m in manager_list}
+
     @filter.command("创建牛牛", alias={'创建'})
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def register_bull(self, event: AstrMessageEvent):
@@ -93,13 +113,8 @@ class DouNiuniuPlugin(Star):
     async def force_register_bull(self, event: AstrMessageEvent):
         """强制为对方创建牛牛，仅管理员，需要@"""
         group_id = event.get_group_id()
-        user_id_sender = event.get_sender_id()
-        
-        if not self.check_group_enable(group_id):
-            yield event.plain_result("❌ 牛牛插件未启用")
-            return
-            
-        if not self.is_niuniu_admin(group_id, user_id_sender):
+
+        if not self.is_event_niuniu_admin(event):
             yield event.plain_result("❌ 权限不足，需要牛牛管理员或超级用户权限")
             return
 
@@ -199,10 +214,10 @@ class DouNiuniuPlugin(Star):
 
     @filter.command("添加牛牛管理员", alias={'添加'})
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
-    async def add_manager(self, event: AstrMessageEvent, target_id: str, group_id: str):
-        """向指定群里添加指定管理员"""
+    async def add_manager(self, event: AstrMessageEvent, group_id: str, target_id: str):
+        """向指定群里添加指定管理员（用法：/添加牛牛管理员 群号 管理员QQ）"""
         user_id_sender = event.get_sender_id()
-        if not self.is_niuniu_admin(group_id, user_id_sender):
+        if not self.is_event_superuser(event) and str(user_id_sender) not in {str(m) for m in self.data_manager.get_group_data(group_id).get('manager', [])}:
             yield event.plain_result("❌ 权限不足，需要牛牛管理员或超级用户权限")
             return
             
@@ -215,10 +230,10 @@ class DouNiuniuPlugin(Star):
 
     @filter.command("删除牛牛管理员", alias={'删除'})
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
-    async def del_manager(self, event: AstrMessageEvent, target_id: str, group_id: str):
-        """向指定群里删除指定管理员"""
+    async def del_manager(self, event: AstrMessageEvent, group_id: str, target_id: str):
+        """向指定群里删除指定管理员（用法：/删除牛牛管理员 群号 管理员QQ）"""
         user_id_sender = event.get_sender_id()
-        if not self.is_niuniu_admin(group_id, user_id_sender):
+        if not self.is_event_superuser(event) and str(user_id_sender) not in {str(m) for m in self.data_manager.get_group_data(group_id).get('manager', [])}:
             yield event.plain_result("❌ 权限不足，需要牛牛管理员或超级用户权限")
             return
             
@@ -239,13 +254,10 @@ class DouNiuniuPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def enable_niuniu(self, event: AstrMessageEvent):
         """开启本群牛牛功能"""
-        user_id = event.get_sender_id()
-        group_id = event.get_group_id()
-        
-        if not self.is_niuniu_admin(group_id, user_id):
+        if not self.is_event_niuniu_admin(event):
             yield event.plain_result(f"❌ 你不是本群的牛牛管理员，无法开启牛牛插件")
         else:
-            self.data_manager.set_group_enabled(group_id, True)
+            self.data_manager.set_group_enabled(event.get_group_id(), True)
             yield event.plain_result(
                 f"🔓️ 牛牛插件已开启\n\n🔗 本插件github链接：https://github.com/LaoZhuJackson/astrbot_plugin_douniuniu#\n🌟 欢迎来点星星，提需求和提交bug━(*｀∀´*)ノ亻!")
 
@@ -253,13 +265,10 @@ class DouNiuniuPlugin(Star):
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def disable_niuniu(self, event: AstrMessageEvent):
         """关闭本群牛牛功能"""
-        user_id = event.get_sender_id()
-        group_id = event.get_group_id()
-        
-        if not self.is_niuniu_admin(group_id, user_id):
+        if not self.is_event_niuniu_admin(event):
             yield event.plain_result(f"❌ 你不是本群的牛牛管理员，无法关闭牛牛插件")
         else:
-            self.data_manager.set_group_enabled(group_id, False)
+            self.data_manager.set_group_enabled(event.get_group_id(), False)
             yield event.plain_result(f"🔒 牛牛插件已关闭")
 
     @filter.command("注销牛牛", alias={'注销'})
@@ -273,7 +282,7 @@ class DouNiuniuPlugin(Star):
             for comp in event.message_obj.message:
                 if isinstance(comp, At):
                     target_id = str(comp.qq)
-                    if not self.is_niuniu_admin(group_id, user_id):
+                    if not self.is_event_niuniu_admin(event):
                         yield event.plain_result(f"❌ 你不是本群的牛牛管理员，无法注销其他用户")
                         return
                     other_data = self.data_manager.get_user_data(target_id)
@@ -583,15 +592,10 @@ class DouNiuniuPlugin(Star):
     async def admin_get_money(self, event: AstrMessageEvent, money: int):
         """bot持有者专用，向账户添加金币"""
         user_id = event.get_sender_id()
-        if not self.is_superuser(user_id):
+        if not self.is_event_superuser(event):
             yield event.plain_result("❌ 权限不足，此命令仅限超级用户(Bot管理员)使用")
             return
-            
-        group_id = event.get_group_id()
-        if not self.check_group_enable(group_id):
-            yield event.plain_result("❌ 牛牛插件未启用")
-            return
-            
+
         if not self.data_manager.get_user_data(user_id):
             yield event.plain_result(f'❌ 你的牛牛还没出生，输入“/创建牛牛”创建牛牛')
             return
@@ -600,16 +604,30 @@ class DouNiuniuPlugin(Star):
         current_money = self.data_manager.get_user_data(user_id)['coins']
         yield event.plain_result(f'💫 超能力使用成功，当前持有金币：{current_money}\n')
 
+    @staticmethod
+    def _parse_manage_num(num) -> tuple:
+        """解析牛牛管理的数值参数。
+
+        @ 会被平台拼进 message_str（如“@昵称(123) +100”），这里取第一个
+        独立成词的带符号数字，避免误取昵称/QQ号中的数字。
+
+        Returns:
+            (整数, 原始带符号字符串)；解析失败返回 (None, None)。
+        """
+        for token in str(num).split():
+            m = re.fullmatch(r'[+-]?\d+', token.strip())
+            if m:
+                raw = m.group(0)
+                return int(raw), raw
+        return None, None
+
     def _require_manage_target(self, event):
-        """牛牛管理命令的通用校验：群启用、管理员权限、@目标存在。
+        """牛牛管理命令的通用校验：管理员权限、@目标存在。
 
         Returns:
             (target_id, 错误文本)。target_id 为 None 时错误文本非 None。
         """
-        group_id = event.get_group_id()
-        if not self.check_group_enable(group_id):
-            return None, "❌ 牛牛插件未启用"
-        if not self.is_niuniu_admin(group_id, event.get_sender_id()):
+        if not self.is_event_niuniu_admin(event):
             return None, "❌ 权限不足，需要牛牛管理员或超级用户权限"
         for comp in event.message_obj.message:
             if isinstance(comp, At):
@@ -626,80 +644,92 @@ class DouNiuniuPlugin(Star):
         pass
 
     @niuniu_admin.command("金币", alias={'改金币', '修改金币'})
-    async def manage_coins(self, event: AstrMessageEvent, num: str):
-        """修改指定用户的牛牛金币：+100 增加，-100 扣除，100 直接设置"""
+    async def manage_coins(self, event: AstrMessageEvent, num: GreedyStr):
+        """修改指定用户的牛牛金币：+100 增加，-100 扣除，100 直接设置（@可前可后）"""
         target_id, err = self._require_manage_target(event)
         if err:
             yield event.plain_result(err)
             return
-        raw = str(num).strip()
-        try:
-            if raw.startswith('+'):
-                change = int(raw)
-                self.data_manager.add_coins(target_id, change)
-                action = f"增加了 {change} 金币"
-            elif raw.startswith('-'):
-                change = int(raw)
-                current = self.data_manager.get_user_data(target_id)['coins']
-                self.data_manager.set_value(target_id, ['coins'], max(0, current + change))
-                action = f"扣除了 {abs(change)} 金币"
-            else:
-                value = int(raw)
-                self.data_manager.set_value(target_id, ['coins'], value)
-                action = f"设置为 {value} 金币"
-        except ValueError:
+        value, raw = self._parse_manage_num(num)
+        if value is None:
             yield event.plain_result("❌ 数值格式错误，例如：/牛牛管理 金币 @XXX +100")
             return
+        if raw.startswith('+'):
+            self.data_manager.add_coins(target_id, value)
+            action = f"增加了 {value} 金币"
+        elif raw.startswith('-'):
+            current = self.data_manager.get_user_data(target_id)['coins']
+            self.data_manager.set_value(target_id, ['coins'], max(0, current + value))
+            action = f"扣除了 {abs(value)} 金币"
+        else:
+            self.data_manager.set_value(target_id, ['coins'], value)
+            action = f"设置为 {value} 金币"
         coins = self.data_manager.get_user_data(target_id)['coins']
         name = self.data_manager.get_user_data(target_id)['user_name']
         yield event.plain_result(f"✅ 已修改 {name} 的金币：{action}\n👛 当前持有金币：{coins}")
 
     @niuniu_admin.command("长度", alias={'改长度', '修改长度'})
-    async def manage_length(self, event: AstrMessageEvent, num: int):
+    async def manage_length(self, event: AstrMessageEvent, num: GreedyStr):
         """修改指定用户的牛牛长度"""
         target_id, err = self._require_manage_target(event)
         if err:
             yield event.plain_result(err)
             return
-        value = max(1, num)
+        value, _ = self._parse_manage_num(num)
+        if value is None:
+            yield event.plain_result("❌ 数值格式错误，例如：/牛牛管理 长度 @XXX 100")
+            return
+        value = max(1, value)
         self.data_manager.set_value(target_id, ['length'], value)
         self.data_manager.update_rank(target_id)
         name = self.data_manager.get_user_data(target_id)['user_name']
         yield event.plain_result(f"✅ 已将 {name} 的牛牛长度设置为 {format_length(value)}")
 
     @niuniu_admin.command("硬度", alias={'改硬度', '修改硬度'})
-    async def manage_hardness(self, event: AstrMessageEvent, num: int):
+    async def manage_hardness(self, event: AstrMessageEvent, num: GreedyStr):
         """修改指定用户的牛牛硬度"""
         target_id, err = self._require_manage_target(event)
         if err:
             yield event.plain_result(err)
             return
-        value = max(1, num)
+        value, _ = self._parse_manage_num(num)
+        if value is None:
+            yield event.plain_result("❌ 数值格式错误，例如：/牛牛管理 硬度 @XXX 10")
+            return
+        value = max(1, value)
         self.data_manager.set_value(target_id, ['hardness'], value)
         self.data_manager.update_rank(target_id)
         name = self.data_manager.get_user_data(target_id)['user_name']
         yield event.plain_result(f"✅ 已将 {name} 的牛牛硬度设置为 {value} 级")
 
     @niuniu_admin.command("深度", alias={'改深度', '修改深度'})
-    async def manage_hole(self, event: AstrMessageEvent, num: int):
+    async def manage_hole(self, event: AstrMessageEvent, num: GreedyStr):
         """修改指定用户的猫猫深度"""
         target_id, err = self._require_manage_target(event)
         if err:
             yield event.plain_result(err)
             return
-        value = max(0, num)
+        value, _ = self._parse_manage_num(num)
+        if value is None:
+            yield event.plain_result("❌ 数值格式错误，例如：/牛牛管理 深度 @XXX 100")
+            return
+        value = max(0, value)
         self.data_manager.set_value(target_id, ['hole'], value)
         name = self.data_manager.get_user_data(target_id)['user_name']
         yield event.plain_result(f"✅ 已将 {name} 的猫猫深度设置为 {format_length(value)}")
 
     @niuniu_admin.command("敏感度", alias={'改敏感度', '修改敏感度'})
-    async def manage_sensitivity(self, event: AstrMessageEvent, num: int):
+    async def manage_sensitivity(self, event: AstrMessageEvent, num: GreedyStr):
         """修改指定用户的猫猫敏感度"""
         target_id, err = self._require_manage_target(event)
         if err:
             yield event.plain_result(err)
             return
-        value = max(0, num)
+        value, _ = self._parse_manage_num(num)
+        if value is None:
+            yield event.plain_result("❌ 数值格式错误，例如：/牛牛管理 敏感度 @XXX 10")
+            return
+        value = max(0, value)
         self.data_manager.set_value(target_id, ['sensitivity'], value)
         name = self.data_manager.get_user_data(target_id)['user_name']
         yield event.plain_result(f"✅ 已将 {name} 的猫猫敏感度设置为 {value} 级")
@@ -1326,14 +1356,8 @@ class DouNiuniuPlugin(Star):
     @config.command("添加名字非法词", alias={'添加非法词', '禁用词'})
     async def add_illegal(self, event: AstrMessageEvent, illegal: str):
         """为取名功能添加禁用词"""
-        user_id = event.get_sender_id()
-        if not self.is_superuser(user_id):
+        if not self.is_event_superuser(event):
             yield event.plain_result("❌ 权限不足，此配置仅限Bot超级用户修改")
-            return
-            
-        group_id = event.get_group_id()
-        if not self.check_group_enable(group_id):
-            yield event.plain_result("❌ 牛牛插件未启用")
             return
             
         disabled_list = self.config['disabled_name']
@@ -1348,14 +1372,8 @@ class DouNiuniuPlugin(Star):
     @config.command("删除名字非法词", alias={'删除非法词'})
     async def del_illegal(self, event: AstrMessageEvent, illegal: str):
         """删除已添加的禁用词"""
-        user_id = event.get_sender_id()
-        if not self.is_superuser(user_id):
+        if not self.is_event_superuser(event):
             yield event.plain_result("❌ 权限不足，此配置仅限Bot超级用户修改")
-            return
-            
-        group_id = event.get_group_id()
-        if not self.check_group_enable(group_id):
-            yield event.plain_result("❌ 牛牛插件未启用")
             return
             
         disabled_list = self.config['disabled_name']
@@ -1370,14 +1388,8 @@ class DouNiuniuPlugin(Star):
     @config.command("打胶cd", alias={'导管cd'})
     async def set_do_self_cd(self, event: AstrMessageEvent, cd: int):
         """设置打胶/自摸cd"""
-        user_id = event.get_sender_id()
-        if not self.is_superuser(user_id):
+        if not self.is_event_superuser(event):
             yield event.plain_result("❌ 权限不足，此配置仅限Bot超级用户修改")
-            return
-            
-        group_id = event.get_group_id()
-        if not self.check_group_enable(group_id):
-            yield event.plain_result("❌ 牛牛插件未启用")
             return
             
         if cd < 0:
